@@ -149,8 +149,8 @@ list.files("data/4-spam")
 ```
 
 ```{r}
-test_path <- "data/4-spam/test.csv"
-train_path <- "data/4-spam/train.csv"
+test_path <- "test.csv"
+train_path <- "train.csv"
 
 stop_words_list <- read_file("stop_words.txt")
 # https://stackoverflow.com/questions/27195912/why-does-strsplit-return-a-list
@@ -161,6 +161,11 @@ splitted_stop_words <- splitted_stop_words[[1]]
 ```{r}
 train <-  read.csv(file = train_path, stringsAsFactors = FALSE)
 test <-  read.csv(file = test_path, stringsAsFactors = FALSE)
+mes_occur <- train %>% count(Category, sort =TRUE)
+sum_mess <- sum(mes_occur$n)
+spam_prop <- mes_occur$n[1] / sum_mess
+ham_prop <- mes_occur$n[2] / sum_mess
+proportions <- list("1" = spam_prop, "0" = ham_prop)
 ```
 
 ```{r}
@@ -168,7 +173,7 @@ create_bag_of_words <- function(data, stop_words) {
   data$Message <- str_replace_all(data$Message, "[[:punct:]]", " ")
   data$Message <- str_to_lower(data$Message)
 
-  data$Category <- ifelse(data$Category == "ham", 0, 1)
+  data$Category <- ifelse(data$Category == "ham", "0", "1")
 
   data <- data %>%
     mutate(row_index = row_number())
@@ -182,23 +187,50 @@ create_bag_of_words <- function(data, stop_words) {
     cast_dtm(document = row_index, term = word, value = n)
 
   dtm_df <- as.data.frame(as.matrix(dtm))
+  word_freq <- tidy_text %>%
+    left_join(data %>% select(row_index, Category), by = "row_index") %>%
+    group_by(word, Category) %>%
+    summarize(count = sum(n), .groups = 'drop') %>%
+    spread(Category, count, fill = 0) %>%
+    rename("0" = `0`, "1" = `1`)
 
-  labels <- data$Category
 
-  return(list(bag_of_words_matrix = dtm_df, labels = labels))
+
+
+  return(list(bag_of_words_matrix = dtm_df, labels = labels, word_frequency = word_freq))
 }
+sum_words <- data.frame(
+  "0" = sum(word_frequency$`0`, na.rm = TRUE),
+  "1" = sum(word_frequency$`1`, na.rm = TRUE)
+)
+c<-1
+word_prop <- word_frequency
+for (i in word_frequency$"0"){
+  word_prop$"0"[c] <- i/sum_words$X0
+  c<-c+1
+}
+c<-1
+for (i in word_frequency$"1"){
+  word_prop$"1"[c] <- i/sum_words$X1
+  c<-c+1
+}
+
+labels <- train_data$Category
+tests <- test 
+tests <- tests %>%
+  mutate(Category = ifelse(Category == "ham", "0", "1"))
+
+# Присвоюємо labels для тестових даних
+labels_test <- tests$Category
+
+
 ```
 
 ```{r}
 result <- create_bag_of_words(train, splitted_stop_words)
-
+bag_of_words_matrix_test<- create_bag_of_words(test, splitted_stop_words)$bag_of_words_matrix
 bag_of_words_matrix <- result$bag_of_words_matrix
-labels <- result$labels
-```
-
-```{r}
-bag_of_words_matrix
-labels
+word_frequency <- result$word_frequency
 ```
 
 ## Data visualization
@@ -212,40 +244,88 @@ positive examples as a histogram, word cloud etc. Be creative!
 
 ```{r}
 naiveBayes <- setRefClass("naiveBayes",
-       # here it would be wise to have some vars to store intermediate result
-       # frequency dict etc. Though pay attention to bag of words! 
-       fields = list(
-         bagOfWords = "data.frame",
-         classProb = "numeric",
-         featureProb = "list"
-       ),
-       methods = list(
-                    # prepare your training data as X - bag of words for each of your
-                    # messages and corresponding label for the message encoded as 0 or 1 
-                    # (binary classification task)
-                    fit = function(X, y)
-                    {
-                         # TODO
-                    },
-                    # return prediction for a single message 
-                    predict = function(message)
-                    {
-                         # TODO
-                    },
-                    
-                    # score you test set so to get the understanding how well you model
-                    # works.
-                    # look at f1 score or precision and recall
-                    # visualize them 
-                    # try how well your model generalizes to real world data! 
-                    score = function(X_test, y_test)
-                    {
-                         # TODO
-                    }
-));
+  fields = list(
+    bagOfWords = "data.frame",
+    classProb = "list",
+    featureProb = "data.frame",
+    labels = "numeric"  # Include labels as a field
+  ),
+  methods = list(
+    fit = function(X, y) {
+      # Store the bag of words and labels
+      bagOfWords <<- X
+      labels <<- y
 
-model = naiveBayes();
-model$fit(train, seq(0,1))
+      # Calculate prior probabilities P(Class)
+      classProb <<- proportions
+
+      # Initialize conditional probabilities P(Feature|Class)
+      featureProb <<- word_prop
+
+    },
+    # Return prediction for a single message 
+    predict = function(message) {
+            # Clean the message similar to preprocessing steps
+      message_clean <- str_replace_all(message, "[[:punct:]]", " ")
+      message_clean <- str_to_lower(message_clean)
+      
+      # Tokenize the message into words
+      words <- unlist(strsplit(message_clean, " "))
+
+      # Remove stop words
+      words <- words[!words %in% splitted_stop_words]
+
+      # Initialize log probabilities for each class (log is used to avoid numerical underflow)
+      log_prob_spam <- (classProb[["0"]])
+      log_prob_ham <- (classProb[["1"]])
+
+      # Loop through each word in the message
+      for (word in words) {
+        if (word %in% featureProb$word) {
+          # Extract the conditional probabilities for the word
+          word_probs <- featureProb[featureProb$word == word,]
+          # Update the log probabilities for each class
+          log_prob_spam <- log_prob_spam*(word_probs$`1`+0.0000000001)  # Adding small value to avoid log(0)
+          log_prob_ham <- log_prob_ham*(word_probs$`0`+0.0000000001)
+        }
+
+      # Compare probabilities and return the predicted class
+      if (log_prob_spam > log_prob_ham) {
+        return("1")  # Predict spam
+      } else {
+        return("0")  # Predict ham
+      }
+    }
+    },
+    
+    # Score the test set to understand how well your model works
+score = function(X_test, y_test) {
+  correct_predictions <- 0
+  total_predictions <- length(y_test)
+  messages <- X_test$Message
+  
+  
+  for (i in 1:total_predictions) {
+    predicted <- messages[i]
+    predicted <- .self$predict(predicted)
+    actual <- y_test[i]  # Actual class label
+    
+    if (predicted == actual) {
+      correct_predictions <- correct_predictions + 1
+    }
+  }
+  
+  accuracy <- correct_predictions / total_predictions
+  cat("Accuracy:", accuracy * 100, "%\n")
+  return(accuracy)
+}
+  )
+)
+
+# Creating the model instance and fitting it
+model = naiveBayes$new()  # Create an instance using new()
+model$fit(bag_of_words_matrix, labels)  # Fit the model with training data
+model$score(tests, labels)
 ```
 
 ## Measure effectiveness of your classifier
