@@ -105,6 +105,7 @@ library(tidyr)
 library(stringr)
 library(tm)
 library(NLP)
+library(tidyverse)
 ```
 
 ## Outline of the work
@@ -162,192 +163,177 @@ splitted_stop_words <- splitted_stop_words[[1]]
 ```{r}
 train <-  read.csv(file = train_path, stringsAsFactors = FALSE)
 test <-  read.csv(file = test_path, stringsAsFactors = FALSE)
-mes_occur <- train %>% count(Category, sort =TRUE)
-sum_mess <- sum(mes_occur$n)
-spam_prop <- mes_occur$n[1] / sum_mess
-ham_prop <- mes_occur$n[2] / sum_mess
-proportions <- list("1" = spam_prop, "0" = ham_prop)
-
-train_data <- train%>%
-  mutate(Category = ifelse(Category == "ham", "0", "1"))
-tests <- test %>%
-  mutate(Category = ifelse(Category == "ham", "0", "1"))
 ```
 
 ```{r}
 create_bag_of_words <- function(data, stop_words) {
   data$Message <- str_replace_all(data$Message, "[[:punct:]]", " ")
   data$Message <- str_to_lower(data$Message)
-
   data$Category <- ifelse(data$Category == "ham", "0", "1")
-
+  
   data <- data %>%
     mutate(row_index = row_number())
-
+  
   tidy_text <- data %>%
     unnest_tokens(word, Message, token = "words") %>%
     filter(!word %in% stop_words) %>%
     count(row_index, word)
-
-  # Create a document-term matrix (DTM)
-  dtm <- tidy_text %>%
-    cast_dtm(document = row_index, term = word, value = n)
-
-  # Apply TF-IDF weighting to the matrix
-  dtm_tfidf <- weightTfIdf(dtm)
-
-  dtm_df <- as.data.frame(as.matrix(dtm_tfidf))  # Convert DTM to a dataframe
-
+  
   word_freq <- tidy_text %>%
     left_join(data %>% select(row_index, Category), by = "row_index") %>%
     group_by(word, Category) %>%
     summarize(count = sum(n), .groups = 'drop') %>%
     spread(Category, count, fill = 0) %>%
-    rename("0" = `0`, "1" = `1`)
-
-  return(list(bag_of_words_matrix = dtm_df, labels = data$Category, word_frequency = word_freq))
+    rename(ham = `0`, spam = `1`)
+  
+  return(list(word_frequency = word_freq, labels = data$Category))
 }
 
 ```
 
 ```{r}
-result <- create_bag_of_words(train, splitted_stop_words)
-bag_of_words_matrix_test<- create_bag_of_words(test, splitted_stop_words)$bag_of_words_matrix
-bag_of_words_matrix <- result$bag_of_words_matrix
-word_frequency <- result$word_frequency
-sum_words <- data.frame(
-  "0" = sum(word_frequency$`0`, na.rm = TRUE),
-  "1" = sum(word_frequency$`1`, na.rm = TRUE)
-)
-c<-1
-word_prop <- word_frequency
-for (i in word_frequency$"0"){
-  word_prop$"0"[c] <- i/sum_words$X0
-  c<-c+1
-}
-c<-1
-for (i in word_frequency$"1"){
-  word_prop$"1"[c] <- i/sum_words$X1
-  c<-c+1
-}
-
-labels <- result$labels
-# Присвоюємо labels для тестових даних
-
-labels_test <- tests$Category
+result_train <- create_bag_of_words(train, splitted_stop_words)
+result_test <- create_bag_of_words(test, splitted_stop_words)
 ```
 
 ## Classifier implementation
 
 ```{r}
+# Naive Bayes Classifier
 naiveBayes <- setRefClass("naiveBayes",
   fields = list(
-    bagOfWords = "data.frame",
     classProb = "list",
     featureProb = "data.frame",
     labels = "character"
   ),
   methods = list(
     fit = function(X, y) {
-      bagOfWords <<- X
       labels <<- y
+      
+      # Calculate class probabilities (prior)
+      class_counts <- table(y)
+      total_samples <- length(y)
+      classProb <<- list(
+        spam = class_counts["1"] / total_samples,
+        ham = class_counts["0"] / total_samples
+      )
 
-      # Calculate prior probabilities P(Class)
-      classProb <<- proportions
-
-      # Calculate feature probabilities with Laplace smoothing
-      featureProb <<- word_prop
-
+      # Calculate feature probabilities for each word with Laplace smoothing
+      total_spam_words <- sum(X$word_frequency$spam)
+      total_ham_words <- sum(X$word_frequency$ham)
+      
+      featureProb <<- X$word_frequency %>%
+        mutate(
+          prob_spam = (spam + 1) / (total_spam_words + nrow(X$word_frequency)),
+          prob_ham = (ham + 1) / (total_ham_words + nrow(X$word_frequency))
+        )
     },
-    predict = function(message, threshold = 0.5) {
-      message_clean <- str_replace_all(message, "[[:punct:]]", " ")
-      message_clean <- str_to_lower(message_clean)
-      words <- unlist(strsplit(message_clean, " "))
-
-      # Remove stop words
+    
+    predict = function(message, threshold = 0.5, smoothing_factor = 1) {
+      words <- message %>%
+               str_replace_all("[[:punct:]]", " ") %>%
+               str_to_lower() %>%
+               strsplit(" ") %>%
+               unlist() %>%
+               unique()
+  
       words <- words[!words %in% splitted_stop_words]
-      words <- unique(words)
 
-      # Initialize log probabilities for each class
-      log_prob_spam <- log(classProb[["1"]] + 0.0000000001)  # Using logs for better numerical stability
-      log_prob_ham <- log(classProb[["0"]] + 0.0000000001)
+      prob_spam <- classProb[["spam"]]
+      prob_ham <- classProb[["ham"]]
+  
+      total_spam_words <- sum(featureProb$spam)
+      total_ham_words <- sum(featureProb$ham)
 
-      # Loop through each word in the message
       for (word in words) {
         if (word %in% featureProb$word) {
-          word_probs <- featureProb[featureProb$word == word, ]
-          log_prob_spam <- log_prob_spam + log(word_probs$`1` + 0.0000000001)  # Add smoothing
-          log_prob_ham <- log_prob_ham + log(word_probs$`0` + 0.0000000001)
+          word_data <- featureProb[featureProb$word == word, ]
+          prob_spam <- prob_spam * ((word_data$spam + smoothing_factor) / (total_spam_words + nrow(featureProb)))
+          prob_ham <- prob_ham * ((word_data$ham + smoothing_factor) / (total_ham_words + nrow(featureProb)))
         } else {
-          log_prob_spam <- log_prob_spam + log(0.0000000001)
-          log_prob_ham <- log_prob_ham + log(0.0000000001)
+          prob_spam <- prob_spam * (smoothing_factor / (total_spam_words + nrow(featureProb)))
+          prob_ham <- prob_ham * (smoothing_factor / (total_ham_words + nrow(featureProb)))
         }
       }
-
-      prob_spam <- exp(log_prob_spam) / (exp(log_prob_spam) + exp(log_prob_ham))
-
-      if (prob_spam > threshold) {
-        return("1")  # Predict spam
-      } else {
-        return("0")  # Predict ham
-      }
+  
+      total_prob <- prob_spam + prob_ham
+      prob_spam <- prob_spam / total_prob
+  
+      return(ifelse(prob_spam > threshold, "1", "0"))
     },
-
+    
     score = function(X_test, y_test) {
       TP <- 0
       TN <- 0
       FP <- 0
       FN <- 0
-
-      total_predictions <- length(y_test)
+      failures <- list()  # To store failure cases
+    
       messages <- X_test$Message
-
+      total_predictions <- length(y_test)
+    
       for (i in 1:total_predictions) {
         predicted <- .self$predict(messages[i])
         actual <- y_test[i]
-
+    
+        # Skip if the predicted value is NA
+        if (is.na(predicted) || is.na(actual)) {
+          next
+        }
+    
         if (predicted == "1" && actual == "1") {
           TP <- TP + 1
         } else if (predicted == "0" && actual == "0") {
           TN <- TN + 1
         } else if (predicted == "1" && actual == "0") {
           FP <- FP + 1
+          failures[[length(failures) + 1]] <- list(
+            message = messages[i],
+            predicted = predicted,
+            actual = actual
+          )
         } else if (predicted == "0" && actual == "1") {
           FN <- FN + 1
+          failures[[length(failures) + 1]] <- list(
+            message = messages[i],
+            predicted = predicted,
+            actual = actual
+          )
         }
       }
-
+    
       precision <- ifelse((TP + FP) > 0, TP / (TP + FP), 0)
       recall <- ifelse((TP + FN) > 0, TP / (TP + FN), 0)
       f1_score <- ifelse((precision + recall) > 0, 2 * (precision * recall) / (precision + recall), 0)
       accuracy <- (TP + TN) / total_predictions * 100
-
-      return(list(accuracy = accuracy, precision = precision, recall = recall, f1_score = f1_score))
+    
+      # Return metrics and failure cases
+      return(list(accuracy = accuracy, precision = precision, recall = recall, f1_score = f1_score, failures = failures))
     }
-  )
 )
+
 ```
 
 ```{r}
-# Create the bag of words for the training and test sets
-result_train <- create_bag_of_words(train, splitted_stop_words)
-result_test <- create_bag_of_words(test, splitted_stop_words)
+metrics <- model$score(test, result_test$labels)
 
-# Extract bag of words and word frequency
-bag_of_words_matrix_train <- result_train$bag_of_words_matrix
-bag_of_words_matrix_test <- result_test$bag_of_words_matrix
-word_frequency <- result_train$word_frequency
-
-# Fit the model
-model <- naiveBayes$new()
-model$fit(bag_of_words_matrix_train, result_train$labels)
-
-# Score the test set
-metrics <- model$score(result_test, result_test$labels)
+# Print metrics
 cat("Accuracy:", metrics$accuracy, "%\n")
 cat("Precision:", metrics$precision, "\n")
 cat("Recall:", metrics$recall, "\n")
 cat("F1 Score:", metrics$f1_score, "\n")
+
+# Show failure cases
+if (length(metrics$failures) > 0) {
+  cat("\nFailure cases:\n")
+  for (failure in metrics$failures) {
+    cat("Message:", failure$message, "\n")
+    cat("Predicted:", failure$predicted, "\n")
+    cat("Actual:", failure$actual, "\n\n")
+  }
+} else {
+  cat("\nNo failure cases found!\n")
+}
 
 ```
 
