@@ -14,10 +14,11 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Work breakdown
 
--   Roman Pavlosiuk підготовка, чистка даних, створення bag_of_words(),
-    score() (f1, recall)
--   Yarema Tebenko - fit(), predict() score() (accuracy) :
--   Sydorak Vladyslav - вся візуалізаціяб висновок:
+-   Roman Pavlosiuk data-preprocessing, measure effectiveness of
+    classifier
+-   Yarema Tebenko - Classifier implementation
+-   Sydorak Vladyslav - Data visualization, conclusions, measure
+    effectiveness visualization
 
 ## Introduction
 
@@ -105,6 +106,9 @@ library(dplyr)
 library(ggplot2)
 library(tidyr)
 library(stringr)
+library(patchwork)
+library(RColorBrewer)
+library(wordcloud)
 ```
 
 ## Outline of the work
@@ -154,7 +158,7 @@ test_path <- "data/4-spam/test.csv"
 train_path <- "data/4-spam/train.csv"
 
 stop_words_list <- read_file("stop_words.txt")
-# https://stackoverflow.com/questions/27195912/why-does-strsplit-return-a-list
+
 splitted_stop_words <- strsplit(stop_words_list, split='\n')
 splitted_stop_words <- splitted_stop_words[[1]]
 ```
@@ -198,7 +202,6 @@ result_test <- create_bag_of_words(test, splitted_stop_words)
 ## Classifier implementation
 
 ```{r}
-# Naive Bayes Classifier
 naiveBayes <- setRefClass("naiveBayes",
   fields = list(
     classProb = "list",
@@ -209,7 +212,6 @@ naiveBayes <- setRefClass("naiveBayes",
     fit = function(X, y) {
       labels <<- y
       
-      # Calculate class probabilities (prior)
       class_counts <- table(y)
       total_samples <- length(y)
       classProb <<- list(
@@ -217,7 +219,6 @@ naiveBayes <- setRefClass("naiveBayes",
         ham = class_counts["0"] / total_samples
       )
 
-      # Calculate feature probabilities for each word with Laplace smoothing
       total_spam_words <- sum(X$word_frequency$spam)
       total_ham_words <- sum(X$word_frequency$ham)
       
@@ -266,7 +267,7 @@ naiveBayes <- setRefClass("naiveBayes",
       TN <- 0
       FP <- 0
       FN <- 0
-      failures <- list()  # To store failure cases
+      failures <- list()
     
       messages <- X_test$Message
       total_predictions <- length(y_test)
@@ -275,7 +276,6 @@ naiveBayes <- setRefClass("naiveBayes",
         predicted <- .self$predict(messages[i])
         actual <- y_test[i]
     
-        # Skip if the predicted value is NA
         if (is.na(predicted) || is.na(actual)) {
           next
         }
@@ -306,7 +306,6 @@ naiveBayes <- setRefClass("naiveBayes",
       f1_score <- ifelse((precision + recall) > 0, 2 * (precision * recall) / (precision + recall), 0)
       accuracy <- (TP + TN) / total_predictions * 100
     
-      # Return metrics and failure cases
       return(list(accuracy = accuracy, precision = precision, recall = recall, f1_score = f1_score, failures = failures))
     }
   ))
@@ -323,17 +322,6 @@ cat("Accuracy:", metrics$accuracy, "%\n")
 cat("Precision:", metrics$precision, "\n")
 cat("Recall:", metrics$recall, "\n")
 cat("F1 Score:", metrics$f1_score, "\n")
-
-if (length(metrics$failures) > 0) {
-  cat("\nFailure cases:\n")
-  for (failure in metrics$failures) {
-    cat("Message:", failure$message, "\n")
-    cat("Predicted:", failure$predicted, "\n")
-    cat("Actual:", failure$actual, "\n\n")
-  }
-} else {
-  cat("\nNo failure cases found!\n")
-}
 ```
 
 ## Data visualization
@@ -344,29 +332,6 @@ visualization. Show what are the most common words for negative and
 positive examples as a histogram, word cloud etc. Be creative!
 
 ```{r}
-list.files(getwd())
-list.files("data/4-spam")
-test_path <- "test.csv"
-train_path <- "train.csv"
-
-library(tidytext)
-library(tidyverse)
-library(readr)
-library(ggplot2)
-library(tidyr)
-library(patchwork)
-library(RColorBrewer)
-library(wordcloud)
-
-stop_words <- read_file("stop_words.txt")
-# https://stackoverflow.com/questions/27195912/why-does-strsplit-return-a-list
-splitted_stop_words <- strsplit(stop_words, split = "\n")
-splitted_stop_words <- splitted_stop_words[[1]]
-
-train <- read.csv(file = train_path, stringsAsFactors = FALSE)
-test <- read.csv(file = test_path, stringsAsFactors = FALSE)
-
-
 create_bag_of_words <- function(data, stop_words) {
 
   data$Message <- str_replace_all(data$Message, "[[:punct:]]", " ")
@@ -513,7 +478,20 @@ plot_word_cloud(word_freq)
 
 -   Visualize them.
 
--   Show failure cases.
+-   Show failure cases
+
+```{r}
+if (length(metrics$failures) > 0) {
+  cat("\nFailure cases:\n")
+  for (failure in metrics$failures) {
+    cat("Message:", failure$message, "\n")
+    cat("Predicted:", failure$predicted, "\n")
+    cat("Actual:", failure$actual, "\n\n")
+  }
+} else {
+  cat("\nNo failure cases found!\n")
+}
+```
 
 ## Conclusions
 
