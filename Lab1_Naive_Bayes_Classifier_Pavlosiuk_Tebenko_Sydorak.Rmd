@@ -100,7 +100,6 @@ library(tidyverse)
 ```{r}
 # here goes a list of recommended libraries,
 # though you may install other ones if they are needed
-library(dplyr)
 library(tidytext)
 library(readr)
 library(ggplot2)
