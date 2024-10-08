@@ -323,6 +323,21 @@ cat("Precision:", metrics$precision, "\n")
 cat("Recall:", metrics$recall, "\n")
 cat("F1 Score:", metrics$f1_score, "\n")
 ```
+```{r}
+metrics <- data.frame(
+  Metric = c("Accuracy", "Precision", "Recall", "F1 Score"),
+  Value = c(metrics$accuracy, metrics$precision * 100, metrics$recall * 100, metrics$f1_score * 100)  # Convert Precision, Recall, F1 Score to percentage
+)
+
+# Create the ggplot histogram
+ggplot(metrics, aes(x = Metric, y = Value, fill = Metric)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Model Performance Metrics", y = "Value (%)", x = "Metric") +
+  theme_minimal() +
+  scale_y_continuous(limits = c(0, 105), expand = c(0, 0)) +
+  geom_text(aes(label = round(Value, 2)), vjust = -0.3)
+```
+
 
 ## Data visualization
 
@@ -495,13 +510,10 @@ if (length(metrics$failures) > 0) {
 
 ## Conclusions
 
-Summarize your work by explaining in a few sentences the points listed
-below.
+In this lab, we implemented a Naive Bayes classifier, a probabilistic machine learning method grounded in Bayes' theorem. This theorem provides a mathematical foundation for calculating the probability of a hypothesis (such as whether a message is spam or ham) based on prior knowledge and the likelihood of observed features. The classifier assumes that the features are independent given the class label, which simplifies the calculation of probabilities.
 
--   Describe the method implemented in general. Show what are
-    mathematical foundations you are basing your solution on.
--   List pros and cons of the method. This should include the
-    limitations of your method, all the assumption you make about the
-    nature of your data etc.
--   Explain why accuracy is not a good choice for the base metrics for
-    classification tasks. Why F1 score is always preferable?
+The Naive Bayes method has several advantages, including its simplicity, efficiency, and effectiveness with high-dimensional data, making it well-suited for text classification tasks. However, it also has limitations, such as the strong assumption of feature independence, which may not hold true in many real-world scenarios. Additionally, the model can be sensitive to imbalanced datasets, where one class significantly outnumbers another, leading to biased predictions.
+
+While accuracy is often considered a primary metric for evaluating classifier performance, it can be misleading, especially in cases of class imbalance. For instance, if a dataset contains 95% ham messages and only 5% spam, a model that predicts all messages as ham would achieve 95% accuracy but would be ineffective at identifying spam. In such situations, the F1 score is a more informative metric, as it balances precision and recall, providing a better measure of the classifier's performance on minority classes. The F1 score is particularly valuable in contexts where false negatives are costly, ensuring that the model not only predicts correctly but also captures all relevant instances of the target class.
+
+Overall, while the Naive Bayes classifier is a powerful tool for classification tasks, it is essential to evaluate its performance using metrics that reflect the specific challenges of the dataset and problem at hand.
