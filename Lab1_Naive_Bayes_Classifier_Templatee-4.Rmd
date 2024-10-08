@@ -105,8 +105,6 @@ library(dplyr)
 library(ggplot2)
 library(tidyr)
 library(stringr)
-library(tm)
-library(NLP)
 ```
 
 ## Outline of the work
