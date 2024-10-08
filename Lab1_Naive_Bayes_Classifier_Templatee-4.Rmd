@@ -14,7 +14,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Work breakdown
 
--   *Name1 Surname1*:
+-   Roman Pavlosiuk
 -   *Name2 Surname2*:
 -   *Name3 Surname3*:
 
@@ -100,6 +100,10 @@ library(tidytext)
 library(readr)
 library(dplyr)
 library(ggplot2)
+library(tidyr)
+library(stringr)
+library(tm)
+library(NLP)
 ```
 
 ## Outline of the work
@@ -148,9 +152,9 @@ list.files("data/4-spam")
 test_path <- "data/4-spam/test.csv"
 train_path <- "data/4-spam/train.csv"
 
-stop_words <- read_file("stop_words.txt")
+stop_words_list <- read_file("stop_words.txt")
 # https://stackoverflow.com/questions/27195912/why-does-strsplit-return-a-list
-splitted_stop_words <- strsplit(stop_words, split='\n')
+splitted_stop_words <- strsplit(stop_words_list, split='\n')
 splitted_stop_words <- splitted_stop_words[[1]]
 ```
 
@@ -160,11 +164,41 @@ test <-  read.csv(file = test_path, stringsAsFactors = FALSE)
 ```
 
 ```{r}
-# note the power functional features of R bring us! 
-tidy_text <- unnest_tokens(train, 'splitted', 'Message', token="words") %>% 
-  filter(!splitted %in% stop_words) %>% count(splitted, sort=TRUE)
+create_bag_of_words <- function(data, stop_words) {
+  data$Message <- str_replace_all(data$Message, "[[:punct:]]", " ")
+  data$Message <- str_to_lower(data$Message)
 
-tidy_text
+  data$Category <- ifelse(data$Category == "ham", 0, 1)
+
+  data <- data %>%
+    mutate(row_index = row_number())
+
+  tidy_text <- data %>%
+    unnest_tokens(word, Message, token = "words") %>%
+    filter(!word %in% stop_words) %>%
+    count(row_index, word)
+
+  dtm <- tidy_text %>%
+    cast_dtm(document = row_index, term = word, value = n)
+
+  dtm_df <- as.data.frame(as.matrix(dtm))
+
+  labels <- data$Category
+
+  return(list(bag_of_words_matrix = dtm_df, labels = labels))
+}
+```
+
+```{r}
+result <- create_bag_of_words(train, splitted_stop_words)
+
+bag_of_words_matrix <- result$bag_of_words_matrix
+labels <- result$labels
+```
+
+```{r}
+bag_of_words_matrix
+labels
 ```
 
 ## Data visualization
@@ -186,11 +220,6 @@ naiveBayes <- setRefClass("naiveBayes",
          featureProb = "list"
        ),
        methods = list(
-                    initialize = function(dataFrame){
-                      classCount <- table(dataFrame$Category)
-                      classProb$0 <<- classCount[1]/nrow(dataFrame)
-                      classProb$1 <<- classCount[2]/nrow(dataFrame)
-                    },
                     # prepare your training data as X - bag of words for each of your
                     # messages and corresponding label for the message encoded as 0 or 1 
                     # (binary classification task)
@@ -198,7 +227,6 @@ naiveBayes <- setRefClass("naiveBayes",
                     {
                          # TODO
                     },
-                    
                     # return prediction for a single message 
                     predict = function(message)
                     {
@@ -214,9 +242,9 @@ naiveBayes <- setRefClass("naiveBayes",
                     {
                          # TODO
                     }
-))
+));
 
-model = naiveBayes(train)
+model = naiveBayes();
 model$fit(train, seq(0,1))
 ```
 
