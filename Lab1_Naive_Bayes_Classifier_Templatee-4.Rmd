@@ -14,9 +14,10 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Work breakdown
 
--   Roman Pavlosiuk підготовка, чистка даних, створення bag_of_words(), score() (f1, recall)
--   Ярема Тебенько - fit(), predict() score() (accuracy) :
--   Влад - вся візуалізаціяб висновок:
+-   Roman Pavlosiuk підготовка, чистка даних, створення bag_of_words(),
+    score() (f1, recall)
+-   Yarema Tebenko - fit(), predict() score() (accuracy) :
+-   Sydorak Vladyslav - вся візуалізаціяб висновок:
 
 ## Introduction
 
@@ -235,15 +236,7 @@ tests <- tests %>%
 
 # Присвоюємо labels для тестових даних
 labels_test <- tests$Category
-
 ```
-
-## Data visualization
-
-Each time you work with some data, you need to understand it before you
-start processing it. R has very powerful tools to make nice plots and
-visualization. Show what are the most common words for negative and
-positive examples as a histogram, word cloud etc. Be creative!
 
 ## Classifier implementation
 
@@ -325,6 +318,14 @@ model = naiveBayes$new()  # Create an instance using new()
 model$fit(bag_of_words_matrix, labels)  # Fit the model with training data
 model$score(tests, labels)
 ```
+
+## Data visualization
+
+Each time you work with some data, you need to understand it before you
+start processing it. R has very powerful tools to make nice plots and
+visualization. Show what are the most common words for negative and
+positive examples as a histogram, word cloud etc. Be creative!
+
 ```{r}
 list.files(getwd())
 list.files("data/4-spam")
