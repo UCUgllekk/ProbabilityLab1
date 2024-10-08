@@ -94,6 +94,8 @@ and the second one is used to test your classifier afterwards. Note that
 it is crucial to randomly split your data into training and testing
 parts to test the classifierʼs possibilities on the unseen data.
 
+library(tidyverse)
+
 ```{r}
 # here goes a list of recommended libraries,
 # though you may install other ones if they are needed
@@ -105,7 +107,6 @@ library(tidyr)
 library(stringr)
 library(tm)
 library(NLP)
-library(tidyverse)
 ```
 
 ## Outline of the work
@@ -310,20 +311,21 @@ naiveBayes <- setRefClass("naiveBayes",
       # Return metrics and failure cases
       return(list(accuracy = accuracy, precision = precision, recall = recall, f1_score = f1_score, failures = failures))
     }
-)
+  ))
 
 ```
 
 ```{r}
+model <- naiveBayes$new()
+model$fit(result_train, result_train$labels)
+
 metrics <- model$score(test, result_test$labels)
 
-# Print metrics
 cat("Accuracy:", metrics$accuracy, "%\n")
 cat("Precision:", metrics$precision, "\n")
 cat("Recall:", metrics$recall, "\n")
 cat("F1 Score:", metrics$f1_score, "\n")
 
-# Show failure cases
 if (length(metrics$failures) > 0) {
   cat("\nFailure cases:\n")
   for (failure in metrics$failures) {
@@ -334,7 +336,6 @@ if (length(metrics$failures) > 0) {
 } else {
   cat("\nNo failure cases found!\n")
 }
-
 ```
 
 ## Data visualization
